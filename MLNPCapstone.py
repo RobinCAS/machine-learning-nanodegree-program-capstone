@@ -6,7 +6,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
-from sklearn.metrics import make_scorer, precision_score
+from sklearn.metrics import make_scorer, roc_auc_score, roc_curve, auc
 from sys import stdout
 from time import clock
 import matplotlib.pyplot as plt
@@ -26,7 +26,7 @@ class MLNPCapstone(object):
 
         self._target_name = target_name                # column name of target values
         self._learner = None                           # the name of the algorithm
-        self._clf = None                               # sklearn classifier object
+        self._clf = dict()                             # sklearn classifier objects
         self._missing_data_label = missing_data_label  # ?, NaN, etc.
         self._use_pca = None                           # should we use PCA?
         self._df = None                                # pandas dataframe with the data
@@ -50,11 +50,41 @@ class MLNPCapstone(object):
 
         print " + Reading in the data...",; stdout.flush()
         self._df = pd.read_csv(datafile)
-        print "done.\n + Preprocessing the data...",; stdout.flush()
+        print "done.\n + Doing basic statistical analysis... done"; stdout.flush()
+        self.statistical_analysis()
+        print " + Preprocessing the data...",; stdout.flush()
         self.preprocess_data()
         print "done.\n + Splitting data into training and test sets...",; stdout.flush()
         self.split_dataframe()
 
+    # Do basic statistical analysis of the data set
+    def statistical_analysis(self):
+        print "  * Number of data points = %d" % self._df.shape[0]
+        print "  * Number of features = %d" % self._df.shape[1]
+        print "  * Feature analysis:"
+
+        # For each column gather the min and max, the mean and median, and the
+        # standard deviation       
+        columns = self._df.columns.tolist()
+        columns = [c for c in columns if c not in [self._target_name]]
+        min_vals = [self._df[c].min() for c in columns]
+        max_vals = [self._df[c].max() for c in columns]
+        mean_vals = [self._df[c].mean() for c in columns]
+        median_vals = [self._df[c].median() for c in columns]
+        std_vals = [self._df[c].std() for c in columns]
+
+        print
+        print '     {:13s}  {:7s}   {:7s}   {:7s}   {:7s}   {:7s}'.format(
+            'FEATURE', 'MIN', 'MAX', 'MEAN', 'MEDIAN', 'STD')
+        for c in columns:
+            feat = c
+            min, max = self._df[c].min(), self._df[c].max()
+            mean, median = self._df[c].mean(), self._df[c].median()
+            std = self._df[c].std()
+            print '     {:10s} {:7.2f}   {:7.2f}   {:8.2f}   {:9.2f}   {:2.2f}'.format(
+                feat, min, max, mean, median, std)
+        print
+ 
     # Use PCA to analyze the data set - knowing the number of principal components
     # can help us choose a model
     def analyze_data(self):
@@ -138,10 +168,13 @@ class MLNPCapstone(object):
 
         # Perform a grid search to find the best learning parameters
         (X, y) = self._train_data
-        self._clf = GridSearchCV(pipe, params, scoring=make_scorer(precision_score))
+        clf = GridSearchCV(pipe, params, scoring=make_scorer(roc_auc_score))
         start = clock()
-        self._clf.fit(X, y)
+        clf.fit(X, y)
         end = clock()
+
+        # Store the classifier in the classifier dictionary
+        self._clf[self._learner] = clf
 
         self._first_classifier = False
 
@@ -190,7 +223,7 @@ class MLNPCapstone(object):
         
         if verbose:
             print "done\n   * Best parameters:" 
-            for (key, value) in self._clf.best_params_.iteritems():
+            for (key, value) in self._clf[self._learner].best_params_.iteritems():
                 print "     - " + key[key.find("__")+2:] + " = " + str(value)
 
             # Print out our precision (swallow the warning about changed behavior
@@ -199,13 +232,37 @@ class MLNPCapstone(object):
             start = clock()
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                score = self._clf.score(X_test, y_test)
+                score = self._clf[self._learner].score(X_test, y_test)
             end = clock()
             testing_time = (end - start)
 
             print
-            print "   * Precision (learner = %s): %f" % (self._learner, score)
+            print "   * roc_auc_score (learner = %s): %f" % (self._learner, score)
             print "   * Training time: %f seconds" % training_time   
             print "   * Testing time: %f seconds" % testing_time 
             print
+
+    # Plot the ROC curve that results from each of our classifiers
+    def plot_roc(self):
+
+        for learner, clf in self._clf.iteritems():
+            # Make the predictions 
+            (X_test, y_test) = self._test_data 
+            y_pred = clf.predict(X_test)
+
+            # Get (f)alse (p)ositive (r)ate, (t)rue (p)ositive (r)ate
+            fpr, tpr, _ = roc_curve(y_test, y_pred)
+      
+            # Add this classifier's results to the plot
+            plt.plot(fpr, tpr, label='%s (area = %0.2f)' % (learner, auc(fpr, tpr)))
+            
+        # Now do the plot
+        # NOTE:  plot code stolen from scikit-learn docs (http://bit.ly/236k6M3)
+        plt.xlim([-0.05, 1.05])
+        plt.ylim([-0.05, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('Receiver Operating Characteristic (ROC)')
+        plt.legend(loc="lower right")
+        plt.show()
  
