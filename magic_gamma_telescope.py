@@ -15,7 +15,7 @@ if __name__ == "__main__":
     # the full feature set is fast enough, and the resulting precision is
     # always higher when using the full feature set  
     mlnp_capstone.set_use_pca(False)
-    
+
     # Perform PCA analysis on the data so we can get an idea on the number
     # of principal components, which might help us make a decision on a
     # classifier (this will do nothing if _use_pca is False)
@@ -23,19 +23,23 @@ if __name__ == "__main__":
 
     # Try a Random Forest Classifier
     mlnp_capstone.set_learner('rfc')
-    mlnp_capstone.run(verbose=True)
+    mlnp_capstone.run()
 
     # Try a Support Vector Machine
     mlnp_capstone.set_learner('svc')
-    mlnp_capstone.run(verbose=True)
+    mlnp_capstone.run()
 
     # Try a K-Nearest Neighbors Classifier
     mlnp_capstone.set_learner('knc')
-    mlnp_capstone.run(verbose=True)
+    mlnp_capstone.run()
 
     # Look at the ROC curve for visual comparison of classifiers
     mlnp_capstone.plot_roc()
-
-    # TODO --- refine the Random Forest Classifier
-    mlnp_capstone.refine('rfc')
+ 
+    # Refine the Random Forest Classifier
+    # NOTE:  plotting the learning curve is a very time-consuming process
+    #        (it took well over an hour on my Linux VM).
+    mlnp_capstone.set_learner('rfc')
+    #mlnp_capstone.run(refining=True, plot_learning_curve=True)
+    mlnp_capstone.run(refining=True)
 

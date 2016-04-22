@@ -1,6 +1,7 @@
 from sklearn.decomposition import RandomizedPCA
-from sklearn.cross_validation import train_test_split
+from sklearn.cross_validation import train_test_split, cross_val_score
 from sklearn.grid_search import GridSearchCV
+from sklearn.learning_curve import learning_curve
 from sklearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
@@ -39,7 +40,7 @@ class MLNPCapstone(object):
         self._pca = None                       # Principal Component Analysis
         self._first_classifier = True          # helps with print formatting
         self._fig_count = 1                    # Number of figures plotted
-        self._non_outliers = None              # Non-outliers (see _find_non_outliers)
+        self._non_outliers = None              # Non-outliers 
  
     # Setters
     def set_learner(self, learner): self._learner = learner
@@ -68,9 +69,9 @@ class MLNPCapstone(object):
         self._df = pd.read_csv(datafile)
         print "done.\n + Doing statistical analysis... done."; stdout.flush()
         self.statistical_analysis()
-        print " + Plotting a scatter matrix... done."; stdout.flush()
+        print " + Plotting a scatter matrix...",; stdout.flush()
         self.scatter_analysis()
-        print " + Preprocessing the data...",; stdout.flush()
+        print "done.\n + Preprocessing the data...",; stdout.flush()
         self.preprocess_data()
         print "done.\n + Creating training and test sets...",; stdout.flush()
         self.split_dataframe()
@@ -81,7 +82,7 @@ class MLNPCapstone(object):
         print "  * Number of features = %d" % self._df.shape[1]
 
         self._find_non_outliers()
-        print "  * Number of outliers (outlier values in 4 or more columns) = %d" %\
+        print "  * Number of outliers (outlier vals in 4 or more cols) = %d" %\
             (len(self._df)-len(self._non_outliers))
         print "  * Feature analysis:"
 
@@ -95,7 +96,7 @@ class MLNPCapstone(object):
         std_vals = [self._df[c].std() for c in cols]
 
         print
-        print '     {:13s}  {:7s}   {:7s}   {:7s}   {:7s}   {:7s}'.format(
+        print '     {:13s}  {:7s}   {:7s}   {:7s}   {:7s}    {:7s}'.format(
             'FEATURE', 'MIN', 'MAX', 'MEAN', 'MEDIAN', 'STD')
         for c in cols:
             feat = c
@@ -103,7 +104,7 @@ class MLNPCapstone(object):
             mean, median = self._df[c].mean(), self._df[c].median()
             std = self._df[c].std()
             print '     {:10s} {:7.2f}   {:7.2f}   {:8.2f}   {:9.2f}'\
-                '   {:2.2f}'.format(feat, min, max, mean, median, std)
+                '   {:4.2f}'.format(feat, min, max, mean, median, std)
         print
     
     # Plot a scatter matrix of the data 
@@ -145,7 +146,10 @@ class MLNPCapstone(object):
         
         (X_train, _) = self._train_data
         if not self._pca:
-            self._pca = RandomizedPCA(n_components=self._pca_max_n, whiten=True)
+            self._pca = RandomizedPCA(
+                            n_components=self._pca_max_n, 
+                            whiten=True,
+                            random_state=42)
             self._pca.fit(X_train)
 
         # NOTE:  plot code stolen from sklearn example: http://bit.ly/1X8ZsUw
@@ -166,7 +170,7 @@ class MLNPCapstone(object):
         
     # Train a classifier pipeline that may or may not use PCA or other
     # feature selection methods
-    def train_classifier(self):
+    def train_classifier(self, refine=False):
 
         params = dict() 
         pipeline_steps = []
@@ -177,36 +181,49 @@ class MLNPCapstone(object):
             if not self._pca:
                 # If haven't set the number of components for PCA, do search
                 if self._pca_n == None:
-                    self._pca = RandomizedPCA()
+                    self._pca = RandomizedPCA(random_state=42)
                     params['pca__n_components'] =\
                         [i for i in range(2,self._pca_max_n+1)]
                     params['pca__whiten'] = [True, False]
                     params['pca__iterated_power'] = [2,3,4,5]
                 else:
-                    self._pca = RandomizedPCA(n_components = self._pca_n)
+                    self._pca = RandomizedPCA(
+                                    n_components = self._pca_n,
+                                    random_state=42)
 
             pipeline_steps.append(('pca', self._pca))
 
         # Add the correct learner to the pipeline, along with its parameters 
         if self._learner == 'rfc':
-            rfc = RandomForestClassifier()
+            rfc = RandomForestClassifier(random_state=42)
+            if not refine:
+                params['rfc__n_estimators'] = [i for i in range(6,15)]
+                params['rfc__max_depth'] = [i for i in range(1,11)]
+                params['rfc__criterion'] = ['gini','entropy']
+            else:
+                # Use the parameters we've already trained
+                for (k, v) in self._clf['rfc'].best_params_.iteritems():
+                    params[k] = [v] 
+                params['rfc__max_features'] = [i for i in range(1,10)]
+                params['rfc__min_samples_split'] = [4,5,6]
+                params['rfc__min_samples_leaf'] = [1,2,3]
+                params['rfc__bootstrap'] = [True, False] # can't do oob_score
+                #params['rfc__oob_score'] = [True, False] # can't do bootstrap
+                params['rfc__warm_start'] = [True, False]
             pipeline_steps.append(('rfc', rfc))
-            params['rfc__n_estimators'] = [i for i in range(1,10)]
-            params['rfc__max_depth'] = [i for i in range(1,10)]
-            params['rfc__criterion'] = ['gini','entropy']
         elif self._learner == 'svc':
-            svc = SVC()
-            pipeline_steps.append(('svc', svc))
+            svc = SVC(random_state=42)
             params['svc__kernel'] = ['poly', 'rbf']
             params['svc__degree'] = [2, 3, 4, 5]
             params['svc__C'] = [1.0, 10.0, 100.0, 1000.0]
+            pipeline_steps.append(('svc', svc))
         elif self._learner == 'knc':
             knc = KNeighborsClassifier()
-            pipeline_steps.append(('knc', knc))
             params['knc__n_neighbors'] = [5, 10, 15, 20]
             params['knc__weights'] = ['uniform', 'distance']
             params['knc__algorithm'] = ['ball_tree', 'kd_tree', 'auto']
             params['knc__leaf_size'] = [10, 20, 30] 
+            pipeline_steps.append(('knc', knc))
         else:
             raise Exception('Undefined learner!')
  
@@ -256,19 +273,20 @@ class MLNPCapstone(object):
 
         X_train, X_test, y_train, y_test = train_test_split(
                                                 X, y, 
-                                                test_size=0.2)
+                                                test_size=0.2,
+                                                random_state=42)
 
         self._train_data = (X_train, y_train)
         self._test_data = (X_test, y_test)
 
     # Run all of the steps to produce a classifier from the given data
-    def run(self, verbose=False):
+    def run(self, verbose=True, refining=False, plot_learning_curve=False):
 
         if self._first_classifier:
             print "done.\n",
         print " + Training classifier (learner = %s, use_pca = %r)..." \
             % (self._learner, self._use_pca),; stdout.flush()
-        training_time = self.train_classifier()
+        training_time = self.train_classifier(refine=refining)
         
         if verbose:
             print "done\n   * Best parameters:" 
@@ -292,6 +310,57 @@ class MLNPCapstone(object):
             print "   * Testing time: %f seconds" % testing_time 
             print
 
+            if plot_learning_curve:
+                self.plot_learning_curve()
+
+    # Plot the learning curve for this learner
+    # (ref: http://scikit-learn.org/stable/auto_examples/model_selection/...
+    #           plot_learning_curve.html)
+    def plot_learning_curve(self):
+        print " + Plotting learning curve (this will take some time)...",
+ 
+        (X_train, y_train) = self._train_data
+
+        plt.figure()
+        plt.title("Learning curve (%s)" % self._learner)
+        plt.xlabel("Training examples")
+        plt.ylabel("Score")
+        train_sizes, train_scores, test_scores = learning_curve(
+                                                    self._clf[self._learner],
+                                                    X_train, y_train,
+                                                    cv=5)
+        train_scores_mean = np.mean(train_scores, axis=1)
+        train_scores_std = np.std(train_scores, axis=1)
+        test_scores_mean = np.mean(test_scores, axis=1)
+        test_scores_std = np.std(test_scores, axis=1)
+        plt.grid()
+
+        plt.fill_between(
+            train_sizes,
+            train_scores_mean - train_scores_std,
+            train_scores_mean + train_scores_std,
+            alpha=0.1,
+            color="r")
+        plt.fill_between(
+            train_sizes, 
+            test_scores_mean - test_scores_std,
+            test_scores_mean + test_scores_std,
+            alpha=0.1,
+            color="g")
+        plt.plot(
+            train_sizes, train_scores_mean, 
+            'o-', color="r",
+            label="Training score")
+        plt.plot(
+            train_sizes, test_scores_mean,
+            'o-', color="g",
+            label="Cross-validation score")
+      
+        plt.legend(loc="best")
+        plt.show()
+  
+        print "done."
+                         
     # Plot the ROC curve that results from each of our classifiers
     def plot_roc(self):
 
@@ -317,8 +386,3 @@ class MLNPCapstone(object):
         plt.legend(loc="lower right")
         plt.show()
 
-    # Refine the given learner by searching for more parameters
-    def refine(self, learner):
-        # TODO
-        pass
- 
