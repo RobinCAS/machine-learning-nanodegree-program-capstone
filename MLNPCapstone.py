@@ -104,7 +104,7 @@ class MLNPCapstone(object):
             mean, median = self._df[c].mean(), self._df[c].median()
             std = self._df[c].std()
             print '     {:10s} {:7.2f}   {:7.2f}   {:8.2f}   {:9.2f}'\
-                '   {:4.2f}'.format(feat, min, max, mean, median, std)
+                '   {:5.2f}'.format(feat, min, max, mean, median, std)
         print
     
     # Plot a scatter matrix of the data 
@@ -385,4 +385,17 @@ class MLNPCapstone(object):
         plt.title('Receiver Operating Characteristic (ROC)')
         plt.legend(loc="lower right")
         plt.show()
+
+    def cross_validate(self):
+        clf = self._clf[self._learner]
+        (X_train, y_train) = self._train_data
+
+        print " + Cross-validating classifier (learner = %s)..." \
+            % self._learner,; stdout.flush()
+        scores = cross_val_score(
+                        self._clf[self._learner],
+                        X_train, y_train,
+                        scoring=make_scorer(roc_auc_score),
+                        cv=3)
+        print "done.\n   * Scores: %r" % scores
 

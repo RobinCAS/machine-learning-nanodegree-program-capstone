@@ -43,3 +43,6 @@ if __name__ == "__main__":
     #mlnp_capstone.run(refining=True, plot_learning_curve=True)
     mlnp_capstone.run(refining=True)
 
+    # Do some cross-validation to verify the stability of the model
+    mlnp_capstone.cross_validate()
+
